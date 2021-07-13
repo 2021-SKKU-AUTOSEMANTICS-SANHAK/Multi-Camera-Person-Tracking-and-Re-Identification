@@ -28,8 +28,8 @@ reid = REID()
 
 
 def get_frame(i, frame):
-    project_id = 'mythic-fire-318606'
-    bucket_id = 'mythic-fire-318606.appspot.com'
+    project_id = 'atsm-202107'
+    bucket_id = 'sanhak_2021'
     dataset_id = 'sanhak_2021'
     table_id = 'video' + str(i)
 
@@ -47,6 +47,9 @@ def get_frame(i, frame):
 
     delete_query = (
         "DELETE FROM {}.{}.{} WHERE datetime = '{}' LIMIT 1".format(project_id, dataset_id, table_id, date_time))
+
+    query_job = db_client.query(delete_query)
+    results = query_job.result()
 
 
     cam = cv2.VideoCapture(path)
@@ -200,7 +203,7 @@ def Reid(return_list, return_list2, ids_per_frame1, ids_per_frame2):
 warnings.filterwarnings('ignore')
 
 if __name__ == '__main__':
-    credential_path = "mythic-fire-318606-5b15a08cba70.json"
+    credential_path = "atsm-202107-50b0c3dc3869.json"
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.3)
