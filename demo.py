@@ -21,21 +21,55 @@ from reid import REID
 from itertools import chain
 from collections import defaultdict
 
+from google.cloud import bigquery, storage
+
 yolo = YOLO4()
 reid = REID()
 
 
 def get_frame(i, frame):
-    cam = cv2.VideoCapture(i)
+    project_id = 'mythic-fire-318606'
+    bucket_id = 'mythic-fire-318606.appspot.com'
+    dataset_id = 'sanhak_2021'
+    table_id = 'video' + str(i)
+
+    storage_client = storage.Client()
+    db_client = bigquery.Client()
+    bucket = storage_client.bucket(bucket_id)
+    select_query = (
+        "SELECT datetime, path FROM {}.{}.{} ORDER BY datetime LIMIT 1".format(project_id, dataset_id, table_id))
+
+    query_job = db_client.query(select_query)
+    results = query_job.result()
+    for row in results:
+        path = row.path
+        date_time = row.datetime
+
+    delete_query = (
+        "DELETE FROM {}.{}.{} WHERE datetime = '{}' LIMIT 1".format(project_id, dataset_id, table_id, date_time))
+
+
+    cam = cv2.VideoCapture(path)
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     start_time = time.time()
-    while True:
-        ret, realframe = cam.read()
-        if (time.time() - start_time) >= 3:
-            cam.release()
-            break
-        frame.append(realframe)
+    if cam.isOpened():
+        while True:
+            ret, img = cam.read()
+            if ret:
+                cv2.waitKey(33)  # what is this??
+                frame.append(img)
+            else:
+                break
+    else:
+        print('cannot open the vid #' + str(i))
+        exit()
+    # while True:
+    #     ret, realframe = cam.read()
+    #     if (time.time() - start_time) >= 3:
+    #         cam.release()
+    #         break
+    #     frame.append(realframe)
 
 
 def gogo(images_by_id, frames, ids_per_frame):
@@ -166,6 +200,8 @@ def Reid(return_list, return_list2, ids_per_frame1, ids_per_frame2):
 warnings.filterwarnings('ignore')
 
 if __name__ == '__main__':
+    credential_path = "mythic-fire-318606-5b15a08cba70.json"
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.3)
     sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options))
