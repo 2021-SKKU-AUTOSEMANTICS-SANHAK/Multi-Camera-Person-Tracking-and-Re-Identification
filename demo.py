@@ -1,4 +1,9 @@
+
 from __future__ import division, print_function, absolute_import
+
+
+import daemon
+
 
 import copy
 import os
@@ -20,28 +25,71 @@ import collections
 from reid import REID
 from itertools import chain
 from collections import defaultdict
+from google.cloud import bigquery, storage
+import multiprocessing
 
-yolo = YOLO4()
-reid = REID()
 
 
 def get_frame(i, frame):
-    cam = cv2.VideoCapture(i)
+    project_id = 'atsm-202107'
+    bucket_id = 'sanhak_2021'
+    dataset_id = 'sanhak_2021'
+    table_id = 'video' + str(i)
+
+    storage_client = storage.Client()
+    db_client = bigquery.Client()
+    bucket = storage_client.bucket(bucket_id)
+    select_query = (
+        "SELECT datetime, path FROM {}.{}.{} ORDER BY datetime LIMIT 1".format(project_id, dataset_id, table_id))
+
+    query_job = db_client.query(select_query)
+    results = query_job.result()
+    for row in results:
+        path = row.path
+        date_time = row.datetime
+
+    delete_query = (
+        "DELETE FROM {}.{}.{} WHERE datetime = '{}'".format(project_id, dataset_id, table_id, date_time))
+
+    query_job = db_client.query(delete_query)
+    results = query_job.result()
+    save = []
+    cam = cv2.VideoCapture(path)
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     start_time = time.time()
-    while True:
-        ret, realframe = cam.read()
-        if (time.time() - start_time) >= 3:
-            cam.release()
-            break
-        frame.append(realframe)
+    if cam.isOpened():
+        while True:
+            ret, img = cam.read()
+            if ret:
+                cv2.waitKey(33)  # what is this??
+                save.append(img)
+            else:
+                break
+        frame.put(save)
+    else:
+        print('cannot open the vid #' + str(i))
+        exit()
+    # while True:
+    #     ret, realframe = cam.read()
+    #     if (time.time() - start_time) >= 3:
+    #         cam.release()
+    #         break
+    #     frame.append(realframe)
+    print("vid {} get_frame finished".format(str(i)))
 
 
-def gogo(images_by_id, frames, ids_per_frame):
+def gogo(images_by_id, frameing, ids_per_frame):
+
+    yolo = YOLO4()
     max_cosine_distance = 0.5
     nn_budget = None
     nms_max_overlap = 0.3
+
+    while(frameing.empty()):
+        time.sleep(1)
+
+    frames = frameing.get()
     frame_nums = (len(frames))
 
     model_filename = 'model_data/models/mars-small128.pb'
@@ -94,6 +142,8 @@ def gogo(images_by_id, frames, ids_per_frame):
 
 
 def Reid(return_list, return_list2, ids_per_frame1, ids_per_frame2):
+
+    reid = REID()
     threshold = 320
     exist_ids = set()
     final_fuse_id = dict()
@@ -101,15 +151,14 @@ def Reid(return_list, return_list2, ids_per_frame1, ids_per_frame2):
     feats = dict()
     ids_per_frame = list()
     length = len(return_list)
-    print(return_list)
-    print(return_list2)
+
 
     for key, value in return_list2.items():
         return_list[key + length] = return_list2[key]
     return_list.update(return_list2)
     images_by_id = return_list
 
-    print(images_by_id)
+
 
     for i in ids_per_frame2:
         d = set()
@@ -122,7 +171,7 @@ def Reid(return_list, return_list2, ids_per_frame1, ids_per_frame2):
 
     for i, value in images_by_id.items():
         feats[i] = reid._features(images_by_id[i])  # reid._features(images_by_id[i][:min(len(images_by_id[i]),100)])
-    print(ids_per_frame)
+
     for f in ids_per_frame:
         if f:
             if len(exist_ids) == 0:
@@ -158,38 +207,53 @@ def Reid(return_list, return_list2, ids_per_frame1, ids_per_frame2):
                     else:
                         final_fuse_id[nid] = [nid]
 
+
     people_num = len(final_fuse_id)
     print('Final ids and their sub-ids:', final_fuse_id)
     print(people_num)
 
 
 warnings.filterwarnings('ignore')
+daemon_pid_file = '/var/run/daemon.pid'
 
-if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.3)
-    sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options))
-
-    with Manager() as manager:
-        frame_get = manager.list()
-        frame_get2 = manager.list()
-        ids_per_frame = manager.list()
-        ids_per_frame2 = manager.list()
-        return_list = manager.dict()
-        return_list2 = manager.dict()
+def pstart(frame_get,frame_get2):
+    cnt = 0
+    while(cnt < 10):
         p = Process(target=get_frame, args=(0, frame_get))
         p2 = Process(target=get_frame, args=(1, frame_get2))
-        p3 = Process(target=gogo, args=(return_list, frame_get, ids_per_frame))
-        p4 = Process(target=gogo, args=(return_list2, frame_get2, ids_per_frame2))
         p.start()
         p2.start()
         p.join()
         p2.join()
+        cnt+=1
+
+if __name__ == '__main__':
+    credential_path = "atsm-202107-50b0c3dc3869.json"
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+    gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.3)
+    sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options))
+    multiprocessing.set_start_method("spawn")
+    frame_get = Manager().Queue()
+    frame_get2 = Manager().Queue()
+    p0 = Process(target=pstart, args =(frame_get, frame_get2))
+    p0.start()
+    cnt = 0
+
+    while(cnt < 10):
+        start_time = time.time()
+        ids_per_frame = Manager().list()
+        ids_per_frame2 = Manager().list()
+        return_list = Manager().dict()
+        return_list2 = Manager().dict()
+        p3 = Process(target=gogo, args=(return_list, frame_get, ids_per_frame))
+        p4 = Process(target=gogo, args=(return_list2, frame_get2, ids_per_frame2))
+        p5 = Process(target=Reid, args=(return_list, return_list2, ids_per_frame, ids_per_frame2))
         p3.start()
         p4.start()
         p3.join()
         p4.join()
-        p5 = Process(target=Reid, args=(return_list, return_list2, ids_per_frame, ids_per_frame2))
         p5.start()
         p5.join()
-
+        print(time.time()-start_time)
+        cnt+1
