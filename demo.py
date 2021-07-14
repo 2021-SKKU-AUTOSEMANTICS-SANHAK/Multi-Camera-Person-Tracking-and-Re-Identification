@@ -46,12 +46,12 @@ def get_frame(i, frame):
         date_time = row.datetime
 
     delete_query = (
-        "DELETE FROM {}.{}.{} WHERE datetime = '{}' LIMIT 1".format(project_id, dataset_id, table_id, date_time))
+        "DELETE FROM {}.{}.{} WHERE datetime = '{}'".format(project_id, dataset_id, table_id, date_time))
 
     query_job = db_client.query(delete_query)
     results = query_job.result()
 
-
+    print(path)
     cam = cv2.VideoCapture(path)
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
