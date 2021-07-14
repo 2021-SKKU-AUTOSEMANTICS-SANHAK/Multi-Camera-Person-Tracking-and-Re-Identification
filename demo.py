@@ -98,12 +98,14 @@ def gogo(images_by_id, frames, ids_per_frame):
         boxs = yolo.detect_image(image)  # n * [topleft_x, topleft_y, w, h]
         features = encoder(frame, boxs)  # n * 128
         detections = [Detection(bbox, 1.0, feature) for bbox, feature in zip(boxs, features)]  # length = n
+        print('detection complete')
 
         # Run non-maxima suppression.
         boxes = np.array([d.tlwh for d in detections])
         scores = np.array([d.confidence for d in detections])
         indices = preprocessing.delete_overlap_box(boxes, nms_max_overlap, scores)
         detections = [detections[i] for i in indices]  # length = len(indices)
+        print('nms complete')
 
         # Call the tracker
         tracker.predict()
