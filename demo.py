@@ -51,7 +51,6 @@ def get_frame(i, frame):
     query_job = db_client.query(delete_query)
     results = query_job.result()
 
-    print(path)
     cam = cv2.VideoCapture(path)
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -73,6 +72,7 @@ def get_frame(i, frame):
     #         cam.release()
     #         break
     #     frame.append(realframe)
+    print("vid {} get_frame finished".format(str(i)))
 
 
 def gogo(images_by_id, frames, ids_per_frame):
@@ -92,7 +92,8 @@ def gogo(images_by_id, frames, ids_per_frame):
     frame_cnt = 0
     track_cnt = dict()
 
-    for frame in frames:
+    for idx, frame in enumerate(frames):
+        print(idx)
         image = Image.fromarray(frame[..., ::-1])  # bgr to rgb
         boxs = yolo.detect_image(image)  # n * [topleft_x, topleft_y, w, h]
         features = encoder(frame, boxs)  # n * 128
